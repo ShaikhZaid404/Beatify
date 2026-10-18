@@ -378,16 +378,18 @@ export default function App() {
     }
     audio.volume = muted ? 0 : volume;
     const p = audio.play();
-    if (p) p.catch(() => setPlaying(false));
+    let cancelled = false;
     setLyrics(null);
     setLyricsStatus("loading");
     fetchLyrics(current)
       .then((l) => {
+        if (cancelled) return;
         setLyrics(l);
         setLyricsStatus(l ? "ok" : "empty");
       })
-      .catch(() => setLyricsStatus("empty"));
-    prefetch(queue[index + 1]);
+      .catch(() => {
+        if (!cancelled) setLyricsStatus("empty");
+      });
     if ("mediaSession" in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
         title: current.title,
@@ -406,6 +408,9 @@ export default function App() {
       navigator.mediaSession.setActionHandler("previoustrack", () => skip(-1));
       navigator.mediaSession.setActionHandler("nexttrack", () => skip(1));
     }
+    return () => {
+      cancelled = true;
+    };
   }, [current && trackKey(current)]);
 
   useEffect(() => {
@@ -510,7 +515,7 @@ export default function App() {
   }, [lyricIndex, panel, lrc.length, lyricsStatus]);
 
   useEffect(() => {
-    if (panel === "lyrics" && current && (!lyrics || lyricsStatus === "idle")) {
+    if (panel === "lyrics" && current && !lyrics && lyricsStatus !== "loading") {
       setLyricsStatus("loading");
       fetchLyrics(current)
         .then((l) => {
@@ -519,7 +524,7 @@ export default function App() {
         })
         .catch(() => setLyricsStatus("empty"));
     }
-  }, [panel, current]);
+  }, [panel, current, lyrics, lyricsStatus]);
 
   useEffect(() => {
     if (!fullscreen || !audioRef.current) return;
@@ -1062,7 +1067,9 @@ export default function App() {
               </div>
             )}
             {!lrc.length && lyrics?.plainLyrics && (
-              <div className="lyrics-track lyrics-plain">{lyrics.plainLyrics}</div>
+              <div style={{ height: "100%", overflowY: "auto", padding: "14vh 8vw 40vh", WebkitOverflowScrolling: "touch" }}>
+                <div className="lyrics-plain">{lyrics.plainLyrics}</div>
+              </div>
             )}
           </div>
         </aside>
