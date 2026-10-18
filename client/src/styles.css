@@ -621,9 +621,11 @@ a { color: inherit; text-decoration: none; }
 
 .mobile-nav { display: none; }
 .ctx {
-  position: fixed; z-index: 50; min-width: 200px;
+  position: fixed; z-index: 9999; min-width: 200px; max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 120px); overflow-y: auto;
   background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-  padding: 6px; box-shadow: 0 16px 40px #0008;
+  padding: 6px; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+  animation: toastSlideIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .ctx button {
   width: 100%; text-align: left; padding: 8px 10px; border-radius: 6px; font-size: 13px;
@@ -762,8 +764,8 @@ a { color: inherit; text-decoration: none; }
   .hero { grid-template-columns: 140px 1fr; gap: 16px; align-items: center; }
   .hero .cover { width: 140px; height: 140px; }
   .hero h1 { font-size: 26px; }
-  .track-row { grid-template-columns: 24px 40px minmax(0, 1fr) 48px 36px; gap: 8px; }
-  .track-row .album, .track-row .more { display: none; }
+  .track-row { grid-template-columns: 20px 40px minmax(0, 1fr) 34px 34px; gap: 6px; }
+  .track-row .album, .track-row .dur { display: none; }
   .card, .card .art { flex-basis: 140px; width: 140px; height: auto; }
   .card .art { height: 140px; }
   .drawer, .lyrics-stage {

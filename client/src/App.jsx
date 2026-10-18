@@ -1100,54 +1100,91 @@ export default function App() {
         </div>
       )}
 
-      {ctxMenu && (
-        <div className="ctx" style={{ left: ctxMenu.x, top: ctxMenu.y }} onClick={(e) => e.stopPropagation()}>
-          <button onClick={() => { playTrack(ctxMenu.track, ctxMenu.list); setCtxMenu(null); }}>Play</button>
-          <button onClick={() => { playNext(ctxMenu.track); setCtxMenu(null); }}>Play next</button>
-          <button onClick={() => { addToQueue(ctxMenu.track); setCtxMenu(null); }}>Add to queue</button>
-          <button onClick={() => { toggleLike(ctxMenu.track); setCtxMenu(null); }}>
-            {isLiked(ctxMenu.track) ? "Unlike" : "Like"}
-          </button>
-          {playlists.length > 0 && (
-            <div className="ctx-sub">
-              <div className="ctx-header">Add to Playlist</div>
-              {playlists.map((pl) => (
-                <button
-                  key={pl.id}
-                  onClick={() => handleAddToPlaylist(pl.id, ctxMenu.track)}
-                >
-                  + {pl.name}
+      {ctxMenu && (() => {
+        const clickX = ctxMenu.rect ? ctxMenu.rect.right : ctxMenu.x;
+        const clickY = ctxMenu.rect ? ctxMenu.rect.bottom : ctxMenu.y;
+        const isNearRight = clickX > (window.innerWidth / 2);
+        const isNearBottom = clickY > (window.innerHeight - 320);
+
+        const posStyle = {
+          position: "fixed",
+          zIndex: 9999,
+        };
+
+        if (isNearRight) {
+          const rightDist = window.innerWidth - clickX;
+          posStyle.right = Math.max(12, rightDist);
+        } else {
+          posStyle.left = Math.max(12, ctxMenu.rect ? ctxMenu.rect.left : ctxMenu.x);
+        }
+
+        if (isNearBottom) {
+          const bottomDist = window.innerHeight - (ctxMenu.rect ? ctxMenu.rect.top : ctxMenu.y);
+          posStyle.bottom = Math.max(84, bottomDist);
+        } else {
+          posStyle.top = Math.max(12, clickY + 4);
+        }
+
+        return (
+          <>
+            <div
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9998,
+                background: "transparent",
+              }}
+              onClick={() => setCtxMenu(null)}
+            />
+            <div className="ctx" style={posStyle} onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => { playTrack(ctxMenu.track, ctxMenu.list); setCtxMenu(null); }}>Play</button>
+              <button onClick={() => { playNext(ctxMenu.track); setCtxMenu(null); }}>Play next</button>
+              <button onClick={() => { addToQueue(ctxMenu.track); setCtxMenu(null); }}>Add to queue</button>
+              <button onClick={() => { toggleLike(ctxMenu.track); setCtxMenu(null); }}>
+                {isLiked(ctxMenu.track) ? "Unlike" : "Like"}
+              </button>
+              {playlists.length > 0 && (
+                <div className="ctx-sub">
+                  <div className="ctx-header">Add to Playlist</div>
+                  {playlists.map((pl) => (
+                    <button
+                      key={pl.id}
+                      onClick={() => handleAddToPlaylist(pl.id, ctxMenu.track)}
+                    >
+                      + {pl.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={() => {
+                  const url = streamUrl(ctxMenu.track);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `${ctxMenu.track.title} - ${ctxMenu.track.author}.mp3`;
+                  a.target = "_blank";
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  setCtxMenu(null);
+                }}
+              >
+                Download MP3
+              </button>
+              {ctxMenu.track.albumUrl && (
+                <button onClick={() => { openCollection({ url: ctxMenu.track.albumUrl, name: ctxMenu.track.album, type: "album" }); setCtxMenu(null); }}>
+                  Go to album
                 </button>
-              ))}
+              )}
+              {ctxMenu.track.artistUrl && (
+                <button onClick={() => { openCollection({ url: ctxMenu.track.artistUrl, name: ctxMenu.track.author, type: "artist" }); setCtxMenu(null); }}>
+                  Go to artist
+                </button>
+              )}
             </div>
-          )}
-          <button
-            onClick={() => {
-              const url = streamUrl(ctxMenu.track);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `${ctxMenu.track.title} - ${ctxMenu.track.author}.mp3`;
-              a.target = "_blank";
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              setCtxMenu(null);
-            }}
-          >
-            Download MP3
-          </button>
-          {ctxMenu.track.albumUrl && (
-            <button onClick={() => { openCollection({ url: ctxMenu.track.albumUrl, name: ctxMenu.track.album, type: "album" }); setCtxMenu(null); }}>
-              Go to album
-            </button>
-          )}
-          {ctxMenu.track.artistUrl && (
-            <button onClick={() => { openCollection({ url: ctxMenu.track.artistUrl, name: ctxMenu.track.author, type: "artist" }); setCtxMenu(null); }}>
-              Go to artist
-            </button>
-          )}
-        </div>
-      )}
+          </>
+        );
+      })()}
 
       {playlistModalOpen && (
         <div className="modal-overlay" onClick={() => setPlaylistModalOpen(false)}>
@@ -1527,17 +1564,19 @@ function TrackList({ tracks, current, playing, onPlay, onLike, isLiked, onContex
           <div
             key={trackKey(t) + i}
             className={`track-row ${active ? "active" : ""}`}
-            onDoubleClick={() => onPlay(t, tracks)}
+            style={{ cursor: "pointer" }}
+            onClick={() => onPlay(t, tracks)}
             onContextMenu={(e) => {
               e.preventDefault();
-              onContext?.({ x: e.clientX, y: e.clientY, track: t, list: tracks });
+              const rect = e.currentTarget.getBoundingClientRect();
+              onContext?.({ x: e.clientX, y: e.clientY, rect, track: t, list: tracks });
             }}
           >
             <div className="idx">{active && playing ? "♪" : i + 1}</div>
-            <div className="art" onClick={() => onPlay(t, tracks)} style={{ cursor: "pointer" }}>
+            <div className="art">
               <Art src={t.artwork} alt="" />
             </div>
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div className="title">{t.title}</div>
               <div className="sub">{t.author}</div>
             </div>
@@ -1545,7 +1584,11 @@ function TrackList({ tracks, current, playing, onPlay, onLike, isLiked, onContex
             <div className="dur">{formatTime(t.duration || 0, true)}</div>
             <button
               className={`icon-btn ${isLiked?.(t) ? "on" : ""}`}
-              onClick={() => onLike?.(t)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onLike?.(t);
+              }}
+              title={isLiked?.(t) ? "Unlike" : "Like"}
             >
               <HeartIcon filled={!!isLiked?.(t)} size={16} />
             </button>
@@ -1553,8 +1596,16 @@ function TrackList({ tracks, current, playing, onPlay, onLike, isLiked, onContex
               className="icon-btn more"
               onClick={(e) => {
                 e.stopPropagation();
-                onContext?.({ x: e.clientX, y: e.clientY, track: t, list: tracks });
+                const rect = e.currentTarget.getBoundingClientRect();
+                onContext?.({
+                  x: e.clientX || rect.right,
+                  y: e.clientY || rect.bottom,
+                  rect: rect,
+                  track: t,
+                  list: tracks
+                });
               }}
+              title="More options"
             >
               <MoreIcon size={16} />
             </button>
