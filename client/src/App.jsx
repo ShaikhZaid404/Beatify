@@ -12,6 +12,14 @@ import {
   searchCatalog,
   streamUrl,
   trackKey,
+  fetchServerPlaylists,
+  createServerPlaylist,
+  addTrackToServerPlaylist,
+  removeTrackFromServerPlaylist,
+  deleteServerPlaylist,
+  fetchServerLiked,
+  toggleServerLiked,
+  recordServerHistory,
 } from "./api.js";
 import { GENRES } from "./genres.js";
 import {
@@ -126,6 +134,11 @@ export default function App() {
   const [genresLoading, setGenresLoading] = useState(false);
   const [genrePage, setGenrePage] = useState(null);
   const [genreLoading, setGenreLoading] = useState(false);
+  const [playlists, setPlaylists] = useState([]);
+  const [libraryTab, setLibraryTab] = useState("liked");
+  const [activePlaylist, setActivePlaylist] = useState(null);
+  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
+  const [newPlaylistName, setNewPlaylistName] = useState("");
   const streamRetry = useRef(0);
   const genreProbe = useRef(0);
 
@@ -151,6 +164,18 @@ export default function App() {
     browseHome()
       .then(setBrowse)
       .catch(() => setBrowse({ songs: [], albums: [], artists: [], picks: [] }));
+
+    fetchServerLiked()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) setLiked(data);
+      })
+      .catch(() => {});
+
+    fetchServerPlaylists()
+      .then((data) => {
+        if (Array.isArray(data)) setPlaylists(data);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -165,8 +190,27 @@ export default function App() {
       setSearching(true);
       searchCatalog(q)
         .then((r) => {
-          setResults(r);
-          setView("search");
+          if (r.collection) {
+            setCollection({
+              info: {
+                name: r.collection.title,
+                artwork: r.collection.cover,
+                type: r.collection.type || "Collection",
+                author: "Spotify"
+              },
+              tracks: r.collection.tracks || []
+            });
+            setView("collection");
+          } else {
+            const tracks = r.tracks || r.results || [];
+            setResults({
+              tracks: tracks,
+              albums: r.albums || [],
+              artists: r.artists || [],
+              playlists: r.playlists || []
+            });
+            setView("search");
+          }
         })
         .catch(() => setResults({ tracks: [], albums: [], artists: [], playlists: [] }))
         .finally(() => setSearching(false));
@@ -183,11 +227,63 @@ export default function App() {
       if (prev.some((x) => trackKey(x) === k)) return prev.filter((x) => trackKey(x) !== k);
       return [t, ...prev];
     });
+    toggleServerLiked(t).catch(() => {});
   }, []);
 
   const pushRecent = useCallback((t) => {
     setRecent((prev) => [t, ...prev.filter((x) => trackKey(x) !== trackKey(t))].slice(0, 80));
+    recordServerHistory(t).catch(() => {});
   }, []);
+
+  const handleCreatePlaylist = async () => {
+    if (!newPlaylistName.trim()) return;
+    try {
+      const created = await createServerPlaylist(newPlaylistName.trim());
+      setPlaylists((prev) => [created, ...prev]);
+      setNewPlaylistName("");
+      setPlaylistModalOpen(false);
+    } catch (e) {
+      alert("Failed to create playlist: " + e.message);
+    }
+  };
+
+  const handleAddToPlaylist = async (playlistId, track) => {
+    try {
+      const updated = await addTrackToServerPlaylist(playlistId, track);
+      setPlaylists((prev) => prev.map((p) => (p.id === playlistId ? updated : p)));
+      if (activePlaylist && activePlaylist.id === playlistId) {
+        setActivePlaylist(updated);
+      }
+      setCtxMenu(null);
+    } catch (e) {
+      alert("Failed to add track to playlist");
+    }
+  };
+
+  const handleRemoveFromPlaylist = async (playlistId, trackId) => {
+    try {
+      const updated = await removeTrackFromServerPlaylist(playlistId, trackId);
+      setPlaylists((prev) => prev.map((p) => (p.id === playlistId ? updated : p)));
+      if (activePlaylist && activePlaylist.id === playlistId) {
+        setActivePlaylist(updated);
+      }
+    } catch (e) {
+      alert("Failed to remove track");
+    }
+  };
+
+  const handleDeletePlaylist = async (playlistId) => {
+    if (!confirm("Are you sure you want to delete this playlist?")) return;
+    try {
+      await deleteServerPlaylist(playlistId);
+      setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
+      if (activePlaylist && activePlaylist.id === playlistId) {
+        setActivePlaylist(null);
+      }
+    } catch (e) {
+      alert("Failed to delete playlist");
+    }
+  };
 
   const playAt = useCallback(
     (list, i) => {
@@ -587,20 +683,124 @@ export default function App() {
           )}
           {view === "library" && (
             <>
-              <h1 className="page-title">Library</h1>
-              <p className="page-sub">Liked tracks saved on this device.</p>
-              {liked.length ? (
-                <TrackList
-                  tracks={liked}
-                  current={current}
-                  playing={playing}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                  onContext={setCtxMenu}
-                />
-              ) : (
-                <div className="empty">Like songs while you listen — they’ll land here.</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div>
+                  <h1 className="page-title" style={{ margin: 0 }}>Library</h1>
+                  <p className="page-sub" style={{ margin: "4px 0 0" }}>Synced with your Beatify server</p>
+                </div>
+                {libraryTab === "playlists" && !activePlaylist && (
+                  <button className="btn" onClick={() => setPlaylistModalOpen(true)}>
+                    + New Playlist
+                  </button>
+                )}
+              </div>
+
+              <div className="tabs" style={{ marginBottom: 20 }}>
+                <button
+                  className={`tab ${libraryTab === "liked" ? "on" : ""}`}
+                  onClick={() => {
+                    setLibraryTab("liked");
+                    setActivePlaylist(null);
+                  }}
+                >
+                  Liked Songs ({liked.length})
+                </button>
+                <button
+                  className={`tab ${libraryTab === "playlists" ? "on" : ""}`}
+                  onClick={() => setLibraryTab("playlists")}
+                >
+                  Playlists ({playlists.length})
+                </button>
+              </div>
+
+              {libraryTab === "liked" && (
+                liked.length ? (
+                  <TrackList
+                    tracks={liked}
+                    current={current}
+                    playing={playing}
+                    onPlay={playTrack}
+                    onLike={toggleLike}
+                    isLiked={isLiked}
+                    onContext={setCtxMenu}
+                  />
+                ) : (
+                  <div className="empty">Like songs while you listen — they’ll appear here and sync to your server.</div>
+                )
+              )}
+
+              {libraryTab === "playlists" && (
+                activePlaylist ? (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+                      <button className="btn ghost" onClick={() => setActivePlaylist(null)}>
+                        ← Back to Playlists
+                      </button>
+                      <button
+                        className="btn"
+                        disabled={!activePlaylist.tracks?.length}
+                        onClick={() => activePlaylist.tracks?.[0] && playTrack(activePlaylist.tracks[0], activePlaylist.tracks)}
+                      >
+                        Play All ({activePlaylist.tracks?.length || 0})
+                      </button>
+                      <button
+                        className="btn ghost"
+                        style={{ color: "var(--danger)" }}
+                        onClick={() => handleDeletePlaylist(activePlaylist.id)}
+                      >
+                        Delete Playlist
+                      </button>
+                    </div>
+
+                    <h2 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 6px" }}>{activePlaylist.name}</h2>
+                    <p style={{ color: "var(--muted-foreground)", fontSize: 13, margin: "0 0 16px" }}>
+                      {activePlaylist.description || `${activePlaylist.tracks?.length || 0} tracks`}
+                    </p>
+
+                    {activePlaylist.tracks?.length ? (
+                      <TrackList
+                        tracks={activePlaylist.tracks}
+                        current={current}
+                        playing={playing}
+                        onPlay={playTrack}
+                        onLike={toggleLike}
+                        isLiked={isLiked}
+                        onContext={setCtxMenu}
+                      />
+                    ) : (
+                      <div className="empty">This playlist is empty. Click 3-dots on any song to add it!</div>
+                    )}
+                  </div>
+                ) : (
+                  playlists.length ? (
+                    <div className="genre-grid">
+                      {playlists.map((pl) => (
+                        <div
+                          key={pl.id}
+                          className="genre-tile"
+                          style={{
+                            background: "var(--card)",
+                            border: "1px solid var(--border)",
+                            cursor: "pointer",
+                            padding: 16
+                          }}
+                          onClick={() => setActivePlaylist(pl)}
+                        >
+                          <div className="g-name" style={{ fontSize: 18, color: "var(--foreground)" }}>
+                            {pl.name}
+                          </div>
+                          <div style={{ color: "var(--muted-foreground)", fontSize: 13, marginTop: 6 }}>
+                            {pl.tracks?.length || 0} tracks
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="empty">
+                      No playlists yet. Click "+ New Playlist" to create your first one!
+                    </div>
+                  )
+                )
               )}
             </>
           )}
@@ -859,6 +1059,34 @@ export default function App() {
           <button onClick={() => { toggleLike(ctxMenu.track); setCtxMenu(null); }}>
             {isLiked(ctxMenu.track) ? "Unlike" : "Like"}
           </button>
+          {playlists.length > 0 && (
+            <div className="ctx-sub">
+              <div className="ctx-header">Add to Playlist</div>
+              {playlists.map((pl) => (
+                <button
+                  key={pl.id}
+                  onClick={() => handleAddToPlaylist(pl.id, ctxMenu.track)}
+                >
+                  + {pl.name}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => {
+              const url = streamUrl(ctxMenu.track);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${ctxMenu.track.title} - ${ctxMenu.track.author}.mp3`;
+              a.target = "_blank";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              setCtxMenu(null);
+            }}
+          >
+            Download MP3
+          </button>
           {ctxMenu.track.albumUrl && (
             <button onClick={() => { openCollection({ url: ctxMenu.track.albumUrl, name: ctxMenu.track.album, type: "album" }); setCtxMenu(null); }}>
               Go to album
@@ -869,6 +1097,41 @@ export default function App() {
               Go to artist
             </button>
           )}
+        </div>
+      )}
+
+      {playlistModalOpen && (
+        <div className="modal-overlay" onClick={() => setPlaylistModalOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>New Playlist</h2>
+            <input
+              type="text"
+              placeholder="Playlist name (e.g. My Favorites)"
+              autoFocus
+              value={newPlaylistName}
+              onChange={(e) => setNewPlaylistName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreatePlaylist()}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                background: "var(--secondary)",
+                border: "1px solid var(--border)",
+                color: "var(--foreground)",
+                borderRadius: "var(--radius)",
+                marginBottom: 16,
+                fontSize: 14,
+                outline: "none"
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button className="btn ghost" onClick={() => setPlaylistModalOpen(false)}>
+                Cancel
+              </button>
+              <button className="btn" onClick={handleCreatePlaylist}>
+                Create
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -960,7 +1223,7 @@ function Home({ browse, recent, onPlayTrack, onOpen, onContext }) {
   }
   return (
     <>
-      <h1 className="page-title">Welcome to Monochrome</h1>
+      <h1 className="page-title">Welcome to Beatify</h1>
       <p className="page-sub">
         {recent.length ? "Pick up where you left off, or find something new." : "You haven’t listened to anything yet. Search for your favorite songs to get started!"}
       </p>

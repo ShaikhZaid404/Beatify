@@ -1,11 +1,12 @@
 {
-  "name": "monochrome",
+  "name": "beatify",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node server/index.js",
+    "dev": "vite client --config client/vite.config.js",
     "build": "vite build --config client/vite.config.js",
+    "preview": "vite preview --config client/vite.config.js",
     "start": "NODE_ENV=production node server/index.js"
   },
   "dependencies": {
