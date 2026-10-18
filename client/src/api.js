@@ -1,4 +1,14 @@
-export const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
+function getApiBase() {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace(/\/+$/, "");
+  }
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, "");
+  }
+  return "";
+}
+
+export const API_BASE = getApiBase();
 
 export function coverUrl(url) {
   if (!url) return "";
@@ -20,7 +30,12 @@ export async function apiGet(path) {
   const url = `${API_BASE}${path}`;
   const res = await fetch(url);
   if (!res.ok) {
-    const err = new Error("request_failed");
+    let msg = `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg);
     err.status = res.status;
     throw err;
   }
@@ -34,7 +49,16 @@ export async function apiPost(path, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!res.ok) throw new Error("post_failed");
+  if (!res.ok) {
+    let msg = `Action failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -43,9 +67,23 @@ export async function apiDelete(path) {
   const res = await fetch(url, {
     method: "DELETE"
   });
-  if (!res.ok) throw new Error("delete_failed");
+  if (!res.ok) {
+    let msg = `Delete failed (${res.status})`;
+    try {
+      const data = await res.json();
+      if (data.error) msg = data.error;
+    } catch {}
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
+
+export const connectToServer = () => apiPost("/api/connect", {
+  client: "Beatify Web Player",
+  url: typeof window !== "undefined" ? window.location.origin : ""
+});
 
 export const searchCatalog = (q) => apiGet(`/api/search?q=${encodeURIComponent(q)}`);
 export const browseHome = () => apiGet("/api/browse");

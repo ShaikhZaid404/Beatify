@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "client/www",
   "rewrites": [
+    { "source": "/api/:path*", "destination": "http://uk-02.rrhosting.eu:7919/api/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

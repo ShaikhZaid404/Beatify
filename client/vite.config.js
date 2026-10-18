@@ -15,11 +15,15 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
-    allowedHosts: true,
-    proxy: { "/api": "http://127.0.0.1:3000" },
+    proxy: {
+      "/api": {
+        target: "http://uk-02.rrhosting.eu:7919",
+        changeOrigin: true
+      }
+    }
   },
   preview: {
     host: "0.0.0.0",
-    allowedHosts: true,
-  },
+    allowedHosts: true
+  }
 });

@@ -20,8 +20,10 @@ import {
   fetchServerLiked,
   toggleServerLiked,
   recordServerHistory,
+  connectToServer,
 } from "./api.js";
 import { GENRES } from "./genres.js";
+import { ToastContainer, notify } from "./Toast.jsx";
 import {
   BackIcon,
   BrowseIcon,
@@ -160,7 +162,19 @@ export default function App() {
     if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
+  const [serverOnline, setServerOnline] = useState(false);
+
   useEffect(() => {
+    connectToServer()
+      .then((data) => {
+        setServerOnline(true);
+        notify("Connected to Beatify Server", "success");
+      })
+      .catch((err) => {
+        setServerOnline(false);
+        console.warn("[BEATIFY] Backend check failed:", err.message);
+      });
+
     browseHome()
       .then(setBrowse)
       .catch(() => setBrowse({ songs: [], albums: [], artists: [], picks: [] }));
@@ -179,14 +193,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (view === "browse" || view === "genre") return undefined;
+    const q = query.trim();
+    if (!q) {
+      setResults(null);
+      setSearching(false);
+      return;
+    }
     const t = setTimeout(() => {
-      const q = query.trim();
-      if (!q) {
-        setResults(null);
-        setSearching(false);
-        return;
-      }
       setSearching(true);
       searchCatalog(q)
         .then((r) => {
@@ -209,6 +222,7 @@ export default function App() {
               artists: r.artists || [],
               playlists: r.playlists || []
             });
+            setSearchTab("tracks");
             setView("search");
           }
         })
@@ -216,7 +230,7 @@ export default function App() {
         .finally(() => setSearching(false));
     }, 280);
     return () => clearTimeout(t);
-  }, [query, view]);
+  }, [query]);
 
   const isLiked = useCallback((t) => liked.some((x) => trackKey(x) === trackKey(t)), [liked]);
 
@@ -242,8 +256,9 @@ export default function App() {
       setPlaylists((prev) => [created, ...prev]);
       setNewPlaylistName("");
       setPlaylistModalOpen(false);
+      notify(`Playlist "${created.name}" created!`, "success");
     } catch (e) {
-      alert("Failed to create playlist: " + e.message);
+      notify("Failed to create playlist: " + e.message, "error");
     }
   };
 
@@ -255,8 +270,9 @@ export default function App() {
         setActivePlaylist(updated);
       }
       setCtxMenu(null);
+      notify("Added track to playlist", "success");
     } catch (e) {
-      alert("Failed to add track to playlist");
+      notify("Failed to add track: " + e.message, "error");
     }
   };
 
@@ -267,21 +283,22 @@ export default function App() {
       if (activePlaylist && activePlaylist.id === playlistId) {
         setActivePlaylist(updated);
       }
+      notify("Removed track from playlist", "info");
     } catch (e) {
-      alert("Failed to remove track");
+      notify("Failed to remove track: " + e.message, "error");
     }
   };
 
   const handleDeletePlaylist = async (playlistId) => {
-    if (!confirm("Are you sure you want to delete this playlist?")) return;
     try {
       await deleteServerPlaylist(playlistId);
       setPlaylists((prev) => prev.filter((p) => p.id !== playlistId));
       if (activePlaylist && activePlaylist.id === playlistId) {
         setActivePlaylist(null);
       }
+      notify("Playlist deleted", "info");
     } catch (e) {
-      alert("Failed to delete playlist");
+      notify("Failed to delete playlist: " + e.message, "error");
     }
   };
 
@@ -539,32 +556,17 @@ export default function App() {
     setPanel(null);
   };
 
+  const openSearch = () => {
+    setView("search");
+    setTimeout(() => searchRef.current?.focus(), 50);
+  };
+
   const openBrowse = () => {
     setView("browse");
     setGenrePage(null);
     setQuery("");
-    setGenres([]);
-    setGenresLoading(true);
-    const token = ++genreProbe.current;
-    const queue = [...GENRES];
-    const workers = Array.from({ length: 6 }, async () => {
-      while (queue.length) {
-        if (genreProbe.current !== token) return;
-        const g = queue.shift();
-        try {
-          const d = await loadGenreMeta(g.id);
-          if (genreProbe.current !== token) return;
-          if (d?.ok && d.genre && (d.genre.trackCount || 0) > 0) {
-            setGenres((prev) => (prev.some((x) => x.id === d.genre.id) ? prev : [...prev, d.genre]));
-          }
-        } catch {
-          /* skip */
-        }
-      }
-    });
-    Promise.all(workers).then(() => {
-      if (genreProbe.current === token) setGenresLoading(false);
-    });
+    setGenres(GENRES.map((g) => ({ ...g, trackCount: 25 })));
+    setGenresLoading(false);
   };
 
   const openGenre = (g) => {
@@ -611,7 +613,7 @@ export default function App() {
         <NavButton id="home" current={view} onClick={goHome} label="Home">
           <HomeIcon />
         </NavButton>
-        <NavButton id="search" current={view} onClick={setView} label="Search">
+        <NavButton id="search" current={view} onClick={openSearch} label="Search">
           <SearchIcon />
         </NavButton>
         <NavButton id="library" current={view} onClick={setView} label="Library">
@@ -624,6 +626,40 @@ export default function App() {
         <NavButton id="settings" current={view} onClick={setView} label="Settings">
           <GearIcon />
         </NavButton>
+        <div
+          title={serverOnline ? "Beatify Backend Online (uk-02.rrhosting.eu:7919)" : "Connecting to Beatify Backend..."}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "10px 0",
+            cursor: "pointer",
+          }}
+          onClick={() => {
+            if (serverOnline) {
+              notify("Beatify Server is Online (uk-02.rrhosting.eu:7919)", "success");
+            } else {
+              notify("Connecting to Beatify Server...", "info");
+              connectToServer()
+                .then(() => {
+                  setServerOnline(true);
+                  notify("Connected to Beatify Server", "success");
+                })
+                .catch(() => notify("Server unreachable. Please check connection.", "error"));
+            }
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: serverOnline ? "#22c55e" : "#eab308",
+              boxShadow: serverOnline ? "0 0 8px #22c55e" : "0 0 8px #eab308",
+              transition: "all 0.3s ease",
+            }}
+          />
+        </div>
       </aside>
 
       <main className="main">
@@ -643,10 +679,19 @@ export default function App() {
               ref={searchRef}
               placeholder="Search songs, albums, artists…"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setQuery(val);
+                if (val.trim()) {
+                  if (view !== "search") setView("search");
+                  setSearchTab("tracks");
+                }
+              }}
               onFocus={() => {
-                if (view === "browse" || view === "genre") return;
-                if (query.trim()) setView("search");
+                if (query.trim() || view === "browse" || view === "genre") {
+                  setView("search");
+                  setSearchTab("tracks");
+                }
               }}
             />
             <button
@@ -679,6 +724,10 @@ export default function App() {
               onPlayTrack={playTrack}
               onOpen={openCollection}
               onContext={setCtxMenu}
+              current={current}
+              playing={playing}
+              onLike={toggleLike}
+              isLiked={isLiked}
             />
           )}
           {view === "library" && (
@@ -939,7 +988,7 @@ export default function App() {
 
       <nav className="mobile-nav">
         <NavButton id="home" current={view} onClick={goHome} label="Home"><HomeIcon size={20} /></NavButton>
-        <NavButton id="search" current={view} onClick={setView} label="Search"><SearchIcon size={20} /></NavButton>
+        <NavButton id="search" current={view} onClick={openSearch} label="Search"><SearchIcon size={20} /></NavButton>
         <NavButton id="library" current={view} onClick={setView} label="Library"><LibraryIcon size={20} /></NavButton>
         <NavButton id="recent" current={view} onClick={setView} label="Recent"><ClockIcon size={20} /></NavButton>
         <NavButton id="settings" current={view} onClick={setView} label="Settings"><GearIcon size={20} /></NavButton>
@@ -1134,6 +1183,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <ToastContainer />
     </div>
   );
 }
@@ -1277,8 +1327,15 @@ function Home({ browse, recent, onPlayTrack, onOpen, onContext }) {
   );
 }
 
-function SearchPage({ query, searching, results, tab, setTab, onPlayTrack, onOpen, onContext }) {
-  if (!query.trim()) return <div className="empty">Search for songs, albums, and artists.</div>;
+function SearchPage({ query, searching, results, tab, setTab, onPlayTrack, onOpen, onContext, current, playing, onLike, isLiked }) {
+  if (!query.trim()) {
+    return (
+      <>
+        <h1 className="page-title">Search</h1>
+        <p className="page-sub">Type a song, artist, album, or paste any Spotify link in the search bar above.</p>
+      </>
+    );
+  }
   if (searching && !results) return <div className="empty">Searching…</div>;
   const r = results || { tracks: [], albums: [], artists: [], playlists: [] };
   const tabs = [
@@ -1296,30 +1353,42 @@ function SearchPage({ query, searching, results, tab, setTab, onPlayTrack, onOpe
         ))}
       </div>
       {tab === "tracks" && (
-        r.tracks.length ? <TrackList tracks={r.tracks} onPlay={onPlayTrack} onContext={onContext} /> : <div className="empty">No tracks.</div>
+        r.tracks.length ? (
+          <TrackList
+            tracks={r.tracks}
+            current={current}
+            playing={playing}
+            onPlay={onPlayTrack}
+            onLike={onLike}
+            isLiked={isLiked}
+            onContext={onContext}
+          />
+        ) : (
+          <div className="empty">{searching ? "Searching…" : "No tracks found for that search."}</div>
+        )
       )}
       {tab === "albums" && (
         <div className="h-scroll" style={{ flexWrap: "wrap" }}>
           {r.albums.map((a) => (
-            <MediaCard key={a.url} title={a.name} subtitle={a.author} art={a.artwork} onClick={() => onOpen(a)} />
+            <MediaCard key={a.url || a.id} title={a.name} subtitle={a.author} art={a.artwork || a.cover} onClick={() => onOpen(a)} />
           ))}
-          {!r.albums.length && <div className="empty">No albums.</div>}
+          {!r.albums.length && <div className="empty">No albums found.</div>}
         </div>
       )}
       {tab === "artists" && (
         <div className="h-scroll" style={{ flexWrap: "wrap" }}>
           {r.artists.map((a) => (
-            <MediaCard key={a.url} title={a.author || a.name} subtitle="Artist" art={a.artwork} artist onClick={() => onOpen(a)} />
+            <MediaCard key={a.url || a.id} title={a.author || a.name} subtitle="Artist" art={a.artwork || a.cover} artist onClick={() => onOpen(a)} />
           ))}
-          {!r.artists.length && <div className="empty">No artists.</div>}
+          {!r.artists.length && <div className="empty">No artists found.</div>}
         </div>
       )}
       {tab === "playlists" && (
         <div className="h-scroll" style={{ flexWrap: "wrap" }}>
           {r.playlists.map((a) => (
-            <MediaCard key={a.url} title={a.name || "Playlist"} subtitle={a.author} art={a.artwork} onClick={() => onOpen(a)} />
+            <MediaCard key={a.url || a.id} title={a.name || "Playlist"} subtitle={a.author} art={a.artwork || a.cover} onClick={() => onOpen(a)} />
           ))}
-          {!r.playlists.length && <div className="empty">No playlists.</div>}
+          {!r.playlists.length && <div className="empty">No playlists found.</div>}
         </div>
       )}
     </>
