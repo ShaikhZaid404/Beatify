@@ -109,16 +109,23 @@ export const fetchServerHistory = () => apiGet("/api/history");
 export const recordServerHistory = (track) => apiPost("/api/history", track);
 
 export async function fetchLyrics(track) {
-  const p = new URLSearchParams({
-    title: track.title || "",
-    artist: track.author || "",
-  });
-  if (track.album) p.set("album", track.album);
-  if (track.duration) p.set("duration", String(Math.round(track.duration / 1000)));
-  const res = await fetch(`${API_BASE}/api/lyrics?${p}`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error("lyrics");
-  return res.json();
+  if (!track || !track.title) return null;
+  try {
+    const p = new URLSearchParams({
+      title: track.title || "",
+      artist: track.author || "",
+    });
+    if (track.album) p.set("album", track.album);
+    if (track.duration) p.set("duration", String(Math.round(track.duration / 1000)));
+    const res = await fetch(`${API_BASE}/api/lyrics?${p}`);
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    if (!data) return null;
+    if (!data.syncedLyrics && !data.plainLyrics) return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 export function prefetch(track) {

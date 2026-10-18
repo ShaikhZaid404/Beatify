@@ -510,6 +510,18 @@ export default function App() {
   }, [lyricIndex, panel, lrc.length, lyricsStatus]);
 
   useEffect(() => {
+    if (panel === "lyrics" && current && (!lyrics || lyricsStatus === "idle")) {
+      setLyricsStatus("loading");
+      fetchLyrics(current)
+        .then((l) => {
+          setLyrics(l);
+          setLyricsStatus(l ? "ok" : "empty");
+        })
+        .catch(() => setLyricsStatus("empty"));
+    }
+  }, [panel, current]);
+
+  useEffect(() => {
     if (!fullscreen || !audioRef.current) return;
     try {
       if (!analyserRef.current) {
@@ -1007,7 +1019,26 @@ export default function App() {
           <div className="lyrics-viewport">
             {!current && <div className="empty">Play a song to see lyrics.</div>}
             {current && lyricsStatus === "loading" && <div className="empty">Fetching lyrics…</div>}
-            {current && lyricsStatus === "empty" && <div className="empty">No lyrics found for this track.</div>}
+            {current && lyricsStatus === "empty" && (
+              <div className="empty" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                <div>No lyrics found for this track.</div>
+                <button
+                  className="btn ghost"
+                  style={{ fontSize: 13, padding: "6px 14px", border: "1px solid var(--border)", borderRadius: 8, cursor: "pointer" }}
+                  onClick={() => {
+                    setLyricsStatus("loading");
+                    fetchLyrics(current)
+                      .then((l) => {
+                        setLyrics(l);
+                        setLyricsStatus(l ? "ok" : "empty");
+                      })
+                      .catch(() => setLyricsStatus("empty"));
+                  }}
+                >
+                  Retry Search
+                </button>
+              </div>
+            )}
             {lyrics?.instrumental && <div className="empty">Instrumental</div>}
             {lrc.length > 0 && (
               <div className="lyrics-track" ref={lyricsRef}>
