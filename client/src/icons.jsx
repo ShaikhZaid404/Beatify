@@ -148,3 +148,11 @@ export const ExpandIcon = (p) => (
     <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" />
   </Icon>
 );
+
+export const MusicIcon = (p) => (
+  <Icon {...p}>
+    <path d="M9 18V5l12-2v13" />
+    <circle cx="6" cy="18" r="3" />
+    <circle cx="18" cy="16" r="3" />
+  </Icon>
+);

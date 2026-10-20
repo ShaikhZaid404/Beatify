@@ -44,6 +44,7 @@ import {
   SearchIcon,
   ShuffleIcon,
   VolumeIcon,
+  MusicIcon,
 } from "./icons.jsx";
 
 const LS_LIKED = "mc-liked";
@@ -61,9 +62,32 @@ function loadJson(key, fallback) {
 }
 
 function Art({ src, alt, className, onClick }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
   const url = src ? coverUrl(src) : "";
-  if (!url) return <div className={className} onClick={onClick} />;
-  return <img className={className} src={url} alt={alt || ""} onClick={onClick} draggable={false} />;
+  if (!url || failed) {
+    return (
+      <div
+        className={`art-fallback ${className || ""}`}
+        onClick={onClick}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "var(--secondary)",
+          color: "var(--muted-foreground)",
+          width: "100%",
+          height: "100%",
+          borderRadius: "inherit"
+        }}
+      >
+        <MusicIcon size={18} />
+      </div>
+    );
+  }
+  return <img className={className} src={url} alt={alt || ""} onError={() => setFailed(true)} onClick={onClick} draggable={false} />;
 }
 
 function NavButton({ id, current, onClick, children, label }) {
@@ -924,8 +948,8 @@ export default function App() {
 
       <footer className="player">
         <div className="now">
-          {current?.artwork ? (
-            <Art src={current.artwork} alt="" onClick={() => setFullscreen(true)} />
+          {(current?.artwork || current?.cover) ? (
+            <Art src={current.artwork || current.cover} alt="" onClick={() => setFullscreen(true)} />
           ) : (
             <div className="ph" onClick={() => current && setFullscreen(true)}>
               <LibraryIcon size={18} />
@@ -1015,7 +1039,7 @@ export default function App() {
         <aside className="lyrics-stage" aria-label="Lyrics">
           <div
             className="lyrics-bg"
-            style={{ backgroundImage: current?.artwork ? `url(${coverUrl(current.artwork)})` : "none" }}
+            style={{ backgroundImage: (current?.artwork || current?.cover) ? `url(${coverUrl(current.artwork || current.cover)})` : "none" }}
           />
           <div className="lyrics-veil" />
           <button className="icon-btn lyrics-close" onClick={() => setPanel(null)} aria-label="Close lyrics">
@@ -1102,12 +1126,12 @@ export default function App() {
 
       {fullscreen && current && (
         <div className="fs" onClick={() => setFullscreen(false)}>
-          <div className="bg" style={{ backgroundImage: current.artwork ? `url(${coverUrl(current.artwork)})` : "none" }} />
+          <div className="bg" style={{ backgroundImage: (current.artwork || current.cover) ? `url(${coverUrl(current.artwork || current.cover)})` : "none" }} />
           <div className="inner" onClick={(e) => e.stopPropagation()}>
             <button className="icon-btn" style={{ alignSelf: "flex-end" }} onClick={() => setFullscreen(false)}>
               <CloseIcon />
             </button>
-            <div className="art"><Art src={current.artwork} alt="" /></div>
+            <div className="art"><Art src={current.artwork || current.cover} alt="" /></div>
             <h2>{current.title}</h2>
             <p>{current.author}</p>
             <canvas ref={canvasRef} />
@@ -1477,7 +1501,7 @@ function CollectionPage({ data, loading, current, playing, onPlay, onLike, isLik
     <>
       <div className="hero">
         <div className={`cover ${info.type === "artist" ? "circle" : ""}`}>
-          <Art src={info.artwork} alt="" />
+          <Art src={info.artwork || info.cover} alt="" />
         </div>
         <div>
           <div className="kicker">{info.type || "Collection"}</div>
@@ -1612,7 +1636,7 @@ function TrackList({ tracks, current, playing, onPlay, onLike, isLiked, onContex
           >
             <div className="idx">{active && playing ? "♪" : i + 1}</div>
             <div className="art">
-              <Art src={t.artwork} alt="" />
+              <Art src={t.artwork || t.cover} alt="" />
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="title">{t.title}</div>
