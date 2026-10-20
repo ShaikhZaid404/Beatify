@@ -328,6 +328,7 @@ export default function App() {
 
   const playAt = useCallback(
     (list, i) => {
+      streamRetry.current = 0;
       setQueue(list);
       setIndex(i);
       setPlaying(true);
@@ -376,6 +377,7 @@ export default function App() {
         if (audioRef.current) audioRef.current.currentTime = 0;
         return;
       }
+      streamRetry.current = 0;
       setIndex((i) => {
         if (shuffle && queue.length > 1) {
           let n = i;
@@ -395,13 +397,21 @@ export default function App() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !current) return;
+    streamRetry.current = 0;
     const url = streamUrl(current);
-    if (audio.src !== new URL(url, window.location.href).href) {
-      audio.src = url;
-      setBuffering(true);
-    }
+    audio.pause();
+    audio.src = url;
+    audio.currentTime = 0;
+    setBuffering(true);
     audio.volume = muted ? 0 : volume;
-    const p = audio.play();
+    audio.load();
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn("audio.play() prevented or interrupted:", err.name);
+      });
+    }
+
     let cancelled = false;
     setLyrics(null);
     setLyricsStatus("loading");
@@ -423,7 +433,7 @@ export default function App() {
       });
       navigator.mediaSession.setActionHandler("play", () => {
         setPlaying(true);
-        audio.play();
+        audio.play().catch(() => {});
       });
       navigator.mediaSession.setActionHandler("pause", () => {
         setPlaying(false);
@@ -446,8 +456,10 @@ export default function App() {
 
   const onEnded = () => {
     if (repeat === "one") {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play();
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
       return;
     }
     if (index < queue.length - 1 || repeat === "all") skip(1);
@@ -640,10 +652,23 @@ export default function App() {
         onError={() => {
           setBuffering(false);
           const audio = audioRef.current;
-          if (!audio || !current || streamRetry.current >= 3) return;
-          streamRetry.current += 1;
-          audio.src = `${streamUrl(current)}&retry=${streamRetry.current}&t=${Date.now()}`;
-          audio.play().catch(() => setPlaying(false));
+          if (!audio || !current) return;
+          if (streamRetry.current < 2) {
+            streamRetry.current += 1;
+            console.warn(`[PLAYBACK] Retrying (${streamRetry.current}/2): "${current.title}"`);
+            audio.src = `${streamUrl(current)}&retry=${streamRetry.current}&t=${Date.now()}`;
+            audio.load();
+            audio.play().catch(() => {});
+          } else {
+            console.error(`[PLAYBACK] Track failed after retries: "${current.title}"`);
+            streamRetry.current = 0;
+            notify(`Skipping "${current.title}" (Stream unavailable)`, "error");
+            if (queue.length > 1) {
+              skip(1);
+            } else {
+              setPlaying(false);
+            }
+          }
         }}
       />
 
